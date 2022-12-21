@@ -1,36 +1,11 @@
-#################
-## build stage ##
-#################
-FROM rust:1-slim-bullseye AS builder
-WORKDIR /code
+FROM alpine:latest
+RUN adduser --disabled-password twitton
+RUN apk --no-cache add dumb-init
+WORKDIR /home/twitton
 
-# Download crates-io index and fetch dependency code.
-# This step avoids needing to spend time on every build downloading the index
-# which can take a long time within the docker context. Docker will cache it.
-RUN USER=root cargo init
-COPY Cargo.toml Cargo.toml
-RUN cargo fetch
+COPY twitton /usr/local/bin/twitton
+RUN chmod +x /usr/local/bin/twitton
 
-# copy app files
-COPY src src
-
-# compile app
-RUN cargo build --release
-
-###############
-## run stage ##
-###############
-FROM debian:bullseye-slim
-WORKDIR /app
-
-# copy server binary from build stage
-COPY --from=builder /code/target/release/twitton twitton
-
-# set user to non-root unless root is required for your app
-USER 1001
-
-# indicate what port the server is running on
-EXPOSE 8080
-
-# run server
-CMD [ "/app/twitton" ]
+# Run as non-root
+USER twitton
+ENTRYPOINT ["dumb-init", "/usr/local/bin/twitton"]
