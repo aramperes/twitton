@@ -15,6 +15,7 @@ struct Environment {
     subscribe_url: String,
     inbox_url: String,
     admin_public_key_pem: String,
+    admin_icon_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -94,6 +95,15 @@ struct PubActorPublicKey {
 }
 
 #[derive(Serialize, Debug)]
+struct PubActorImage {
+    #[serde(rename(serialize = "type"))]
+    res_type: String,
+    #[serde(rename(serialize = "mediaType"))]
+    media_type: String,
+    url: String,
+}
+
+#[derive(Serialize, Debug)]
 struct PubActorResponse {
     #[serde(rename(serialize = "@context"))]
     context: Vec<String>,
@@ -105,6 +115,7 @@ struct PubActorResponse {
     inbox: String,
     #[serde(rename(serialize = "publicKey"))]
     public_key: PubActorPublicKey,
+    icon: Option<PubActorImage>,
 }
 
 #[get("/user/{username}")]
@@ -128,6 +139,11 @@ async fn pub_user(
                 owner: data.admin_profile_url.clone(),
                 public_key_pem: data.admin_public_key_pem.clone(),
             },
+            icon: data.admin_icon_url.clone().map(|url| PubActorImage {
+                res_type: "Image".into(),
+                media_type: "image/png".into(),
+                url,
+            }),
         }))
     } else {
         Err(WebfingerError { description: "404" })
@@ -155,6 +171,7 @@ async fn main() -> anyhow::Result<()> {
             let subscribe_url = format!("https://{}/authorize_interaction?uri={{uri}}", web_domain);
             let inbox_url = format!("https://{}/inbox", web_domain);
             let admin_public_key_pem = get_env("ADMIN_PUBLIC_KEY_PEM").unwrap();
+            let admin_icon_url = std::env::var("ADMIN_ICON_URL").ok();
 
             Environment {
                 web_domain,
@@ -165,6 +182,7 @@ async fn main() -> anyhow::Result<()> {
                 subscribe_url,
                 inbox_url,
                 admin_public_key_pem,
+                admin_icon_url,
             }
         };
         App::new()
