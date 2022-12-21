@@ -1,6 +1,10 @@
 use anyhow::Context;
 
-use actix_web::{error, get, http::StatusCode, web, HttpResponse, Responder};
+use actix_web::{
+    error, get,
+    http::{header::HeaderValue, StatusCode},
+    web, HttpRequest, HttpResponse, Responder,
+};
 use derive_more::{Display, Error};
 use serde::{Deserialize, Serialize};
 
@@ -120,31 +124,46 @@ struct PubActorResponse {
 
 #[get("/user/{username}")]
 async fn pub_user(
+    req: HttpRequest,
     data: web::Data<Environment>,
     username: web::Path<String>,
 ) -> actix_web::Result<impl Responder, WebfingerError> {
     let username = username.into_inner();
     if username == data.admin_username {
-        Ok(web::Json(PubActorResponse {
-            context: vec![
-                "https://www.w3.org/ns/activitystreams".into(),
-                "https://w3id.org/security/v1".into(),
-            ],
-            id: data.admin_profile_url.clone(),
-            actor_type: "Person".into(),
-            preferred_username: data.admin_username.clone(),
-            inbox: data.inbox_url.clone(),
-            public_key: PubActorPublicKey {
-                id: format!("{}#main-key", data.admin_profile_url),
-                owner: data.admin_profile_url.clone(),
-                public_key_pem: data.admin_public_key_pem.clone(),
-            },
-            icon: data.admin_icon_url.clone().map(|url| PubActorImage {
-                res_type: "Image".into(),
-                media_type: "image/png".into(),
-                url,
-            }),
-        }))
+        match req
+            .headers()
+            .get("accept")
+            .map(HeaderValue::to_str)
+            .and_then(Result::ok)
+        {
+            Some("application/activity+json" | "application/json") => {
+                Ok(HttpResponse::build(StatusCode::OK)
+                    .content_type("application/activity+json")
+                    .json(PubActorResponse {
+                        context: vec![
+                            "https://www.w3.org/ns/activitystreams".into(),
+                            "https://w3id.org/security/v1".into(),
+                        ],
+                        id: data.admin_profile_url.clone(),
+                        actor_type: "Person".into(),
+                        preferred_username: data.admin_username.clone(),
+                        inbox: data.inbox_url.clone(),
+                        public_key: PubActorPublicKey {
+                            id: format!("{}#main-key", data.admin_profile_url),
+                            owner: data.admin_profile_url.clone(),
+                            public_key_pem: data.admin_public_key_pem.clone(),
+                        },
+                        icon: data.admin_icon_url.clone().map(|url| PubActorImage {
+                            res_type: "Image".into(),
+                            media_type: "image/png".into(),
+                            url,
+                        }),
+                    }))
+            }
+            _ => Ok(HttpResponse::build(StatusCode::OK)
+                .content_type("text/html")
+                .body(format!("twitton // {}", username))),
+        }
     } else {
         Err(WebfingerError { description: "404" })
     }
