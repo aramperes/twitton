@@ -1,16 +1,18 @@
 use anyhow::Context;
 
+mod webfinger;
+
 use actix_web::{
-    error, get,
+    get,
     http::{header::HeaderValue, StatusCode},
     web, HttpRequest, HttpResponse, Responder,
 };
-use derive_more::{Display, Error};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use webfinger::WebfingerError;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone)]
-struct Environment {
+pub struct Environment {
     web_domain: String,
     local_domain: String,
     admin_username: String,
@@ -20,74 +22,6 @@ struct Environment {
     inbox_url: String,
     admin_public_key_pem: String,
     admin_icon_url: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct WebfingerRequest {
-    resource: String,
-}
-
-#[derive(Serialize, Debug)]
-struct WebfingerResponse {
-    subject: String,
-    aliases: Vec<String>,
-    links: Vec<WebfingerLink>,
-}
-
-#[derive(Serialize, Debug)]
-struct WebfingerLink {
-    rel: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename(serialize = "type"))]
-    rel_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    href: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    template: Option<String>,
-}
-
-#[derive(Debug, Display, Error)]
-#[display(fmt = "error: {}", description)]
-struct WebfingerError {
-    description: &'static str,
-}
-
-impl error::ResponseError for WebfingerError {}
-
-#[get("/.well-known/webfinger")]
-async fn finger(
-    data: web::Data<Environment>,
-    query: web::Query<WebfingerRequest>,
-) -> actix_web::Result<impl Responder, WebfingerError> {
-    let admin_resource = format!("acct:{}", data.admin_username_domain);
-    if query.resource == admin_resource {
-        Ok(web::Json(WebfingerResponse {
-            subject: admin_resource,
-            aliases: vec![data.admin_profile_url.clone()],
-            links: vec![
-                WebfingerLink {
-                    rel: "http://webfinger.net/rel/profile-page".into(),
-                    rel_type: Some("text/html".into()),
-                    href: Some(data.admin_profile_url.clone()),
-                    template: None,
-                },
-                WebfingerLink {
-                    rel: "self".into(),
-                    rel_type: Some("application/activity+json".into()),
-                    href: Some(data.admin_profile_url.clone()),
-                    template: None,
-                },
-                WebfingerLink {
-                    rel: "http://ostatus.org/schema/1.0/subscribe".into(),
-                    rel_type: None,
-                    href: None,
-                    template: Some(data.subscribe_url.clone()),
-                },
-            ],
-        }))
-    } else {
-        Err(WebfingerError { description: "404" })
-    }
 }
 
 #[derive(Serialize, Debug)]
@@ -207,7 +141,7 @@ async fn main() -> anyhow::Result<()> {
         App::new()
             .app_data(web::Data::new(env))
             .service(index)
-            .service(finger)
+            .service(webfinger::finger)
             .service(pub_user)
     })
     .bind(("0.0.0.0", 8080))?
