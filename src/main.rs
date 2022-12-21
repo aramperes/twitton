@@ -1,9 +1,10 @@
 use anyhow::Context;
 
-use actix_web::{error, get, guard, web, Responder};
+use actix_web::{error, get, http::StatusCode, web, HttpResponse, Responder};
 use derive_more::{Display, Error};
 use serde::{Deserialize, Serialize};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct Environment {
     web_domain: String,
@@ -133,6 +134,13 @@ async fn pub_user(
     }
 }
 
+#[get("/")]
+async fn index() -> actix_web::Result<impl Responder, WebfingerError> {
+    Ok(HttpResponse::build(StatusCode::OK)
+        .content_type("text/html")
+        .body("twitton :)"))
+}
+
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
     use actix_web::{App, HttpServer};
@@ -161,6 +169,7 @@ async fn main() -> anyhow::Result<()> {
         };
         App::new()
             .app_data(web::Data::new(env))
+            .service(index)
             .service(finger)
             .service(pub_user)
     })
@@ -173,10 +182,6 @@ async fn main() -> anyhow::Result<()> {
 fn get_env(name: &str) -> anyhow::Result<String> {
     std::env::var(name)
         .ok()
-        .filter(env_not_empty)
+        .filter(|s| !s.trim().is_empty())
         .with_context(|| format!("missing env: {}", name))
-}
-
-fn env_not_empty(s: &String) -> bool {
-    !s.trim().is_empty()
 }
