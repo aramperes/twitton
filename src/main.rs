@@ -22,9 +22,15 @@ pub struct Environment {
     admin_username_domain: String,
     admin_profile_url: String,
     subscribe_url: String,
-    inbox_url: String,
+    shared_inbox_url: String,
     admin_public_key_pem: String,
     admin_icon_url: Option<String>,
+}
+
+impl Environment {
+    pub fn direct_inbox_url(&self, username: &str) -> String {
+        format!("https://{}/user/{}/inbox", self.web_domain, username)
+    }
 }
 
 #[derive(Serialize, Debug)]
@@ -57,6 +63,13 @@ struct PubActorResponse {
     #[serde(rename(serialize = "publicKey"))]
     public_key: PubActorPublicKey,
     icon: Option<PubActorImage>,
+    endpoints: PubActorEndpoints,
+}
+
+#[derive(Serialize, Debug)]
+struct PubActorEndpoints {
+    #[serde(rename(serialize = "sharedInbox"))]
+    shared_inbox: String,
 }
 
 #[get("/user/{username}")]
@@ -84,7 +97,7 @@ async fn pub_user(
                         id: data.admin_profile_url.clone(),
                         actor_type: "Person".into(),
                         preferred_username: data.admin_username.clone(),
-                        inbox: data.inbox_url.clone(),
+                        inbox: data.direct_inbox_url(&data.admin_username),
                         public_key: PubActorPublicKey {
                             id: format!("{}#main-key", data.admin_profile_url),
                             owner: data.admin_profile_url.clone(),
@@ -95,6 +108,9 @@ async fn pub_user(
                             media_type: "image/png".into(),
                             url,
                         }),
+                        endpoints: PubActorEndpoints {
+                            shared_inbox: data.shared_inbox_url.clone(),
+                        },
                     }))
             }
             _ => Ok(HttpResponse::build(StatusCode::OK)
@@ -114,7 +130,22 @@ async fn index() -> actix_web::Result<impl Responder, WebfingerError> {
 }
 
 #[post("/inbox")]
-async fn inbox(
+async fn shared_inbox(
+    req: HttpRequest,
+    body: web::Bytes,
+) -> actix_web::Result<impl Responder, WebfingerError> {
+    process_inbox(req, body).await
+}
+
+#[post("/user/{username}/inbox")]
+async fn direct_inbox(
+    req: HttpRequest,
+    body: web::Bytes,
+) -> actix_web::Result<impl Responder, WebfingerError> {
+    process_inbox(req, body).await
+}
+
+async fn process_inbox(
     req: HttpRequest,
     body: web::Bytes,
 ) -> actix_web::Result<impl Responder, WebfingerError> {
@@ -143,7 +174,7 @@ async fn main() -> anyhow::Result<()> {
             let admin_username_domain = format!("{}@{}", admin_username, local_domain);
             let admin_profile_url = format!("https://{}/user/{}", web_domain, admin_username);
             let subscribe_url = format!("https://{}/authorize_interaction?uri={{uri}}", web_domain);
-            let inbox_url = format!("https://{}/inbox", web_domain);
+            let shared_inbox_url = format!("https://{}/inbox", web_domain);
             let admin_public_key_pem = get_env("ADMIN_PUBLIC_KEY_PEM").unwrap();
             let admin_icon_url = std::env::var("ADMIN_ICON_URL").ok();
 
@@ -154,7 +185,7 @@ async fn main() -> anyhow::Result<()> {
                 admin_username_domain,
                 admin_profile_url,
                 subscribe_url,
-                inbox_url,
+                shared_inbox_url,
                 admin_public_key_pem,
                 admin_icon_url,
             }
@@ -164,7 +195,8 @@ async fn main() -> anyhow::Result<()> {
             .service(index)
             .service(webfinger::finger)
             .service(pub_user)
-            .service(inbox)
+            .service(shared_inbox)
+            .service(direct_inbox)
     })
     .bind(("0.0.0.0", 8080))?
     .run()
