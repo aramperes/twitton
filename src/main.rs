@@ -1,11 +1,14 @@
 use anyhow::Context;
 
+#[macro_use]
+extern crate log;
+
 mod webfinger;
 
 use actix_web::{
     get,
     http::{header::HeaderValue, StatusCode},
-    web, HttpRequest, HttpResponse, Responder,
+    post, web, HttpRequest, HttpResponse, Responder,
 };
 use serde::Serialize;
 use webfinger::WebfingerError;
@@ -110,9 +113,27 @@ async fn index() -> actix_web::Result<impl Responder, WebfingerError> {
         .body("twitton :)"))
 }
 
+#[post("/inbox")]
+async fn inbox(
+    req: HttpRequest,
+    body: web::Bytes,
+) -> actix_web::Result<impl Responder, WebfingerError> {
+    info!(
+        "headers={:?}\nbody = {}",
+        req.headers(),
+        std::str::from_utf8(&body).expect("failed to parse body as utf")
+    );
+
+    Ok(HttpResponse::build(StatusCode::OK)
+        .content_type("application/json")
+        .body("{}"))
+}
+
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
     use actix_web::{App, HttpServer};
+
+    pretty_env_logger::init();
 
     HttpServer::new(|| {
         let env = {
@@ -143,6 +164,7 @@ async fn main() -> anyhow::Result<()> {
             .service(index)
             .service(webfinger::finger)
             .service(pub_user)
+            .service(inbox)
     })
     .bind(("0.0.0.0", 8080))?
     .run()
